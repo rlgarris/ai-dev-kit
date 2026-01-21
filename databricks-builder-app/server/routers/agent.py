@@ -188,11 +188,21 @@ async def invoke_agent(request: Request, body: InvokeAgentRequest):
                     })
 
                 elif event_type == 'tool_result':
+                    content = event.get('content', '')
+                    is_error = event.get('is_error', False)
+
+                    # Detect cascade failure pattern - "Stream closed" errors indicate
+                    # the Claude subprocess's MCP connection is broken
+                    if is_error and 'Stream closed' in str(content):
+                        logger.error(f'Detected MCP connection failure: {content}')
+                        # Add context to the error
+                        content = f'MCP Connection Lost: The tool execution was interrupted because the internal communication channel broke. This usually happens after a long-running operation. Please start a new conversation to reset the connection. Original error: {content}'
+
                     stream.add_event({
                         'type': 'tool_result',
                         'tool_use_id': event.get('tool_use_id', ''),
-                        'content': event.get('content', ''),
-                        'is_error': event.get('is_error', False),
+                        'content': content,
+                        'is_error': is_error,
                     })
 
                 elif event_type == 'result':
@@ -228,10 +238,29 @@ async def invoke_agent(request: Request, body: InvokeAgentRequest):
                     stream.add_event({'type': 'cancelled'})
                     break
 
+                elif event_type == 'keepalive':
+                    # Keepalive during long tool execution - forward to stream to keep connection alive
+                    elapsed = event.get('elapsed_since_last_event', 0)
+                    logger.debug(f'Stream {stream.execution_id} keepalive - {elapsed:.0f}s since last event')
+                    stream.add_event({
+                        'type': 'keepalive',
+                        'elapsed_since_last_event': elapsed,
+                    })
+
         except Exception as e:
-            logger.error(f'Error during agent stream: {e}')
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f'Error during agent stream: {type(e).__name__}: {e}')
+            logger.error(f'Agent stream traceback:\n{error_details}')
+            print(f'[AGENT STREAM ERROR] {type(e).__name__}: {e}', flush=True)
+            print(f'[AGENT STREAM TRACEBACK]\n{error_details}', flush=True)
+
+            # Provide more context for common errors
             error_message = str(e)
-            stream.add_event({'type': 'error', 'error': str(e)})
+            if 'Stream closed' in error_message:
+                error_message = f'Agent communication interrupted: {error_message}. This typically occurs when the Claude subprocess terminates unexpectedly. Check backend logs for details.'
+
+            stream.add_event({'type': 'error', 'error': error_message})
 
         # Save messages to storage after stream completes (if not cancelled)
         if not stream.is_cancelled:

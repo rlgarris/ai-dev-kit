@@ -63,13 +63,22 @@ When using `execute_sql` or other SQL tools, use this warehouse_id by default.
   workspace_folder_section = ''
   if workspace_folder:
     workspace_folder_section = f"""
-## Workspace Folder
+## Databricks Workspace Folder (Remote Upload Target)
 
-Files should be uploaded to this workspace folder:
-- **Workspace Folder:** `{workspace_folder}`
+**IMPORTANT: This is a REMOTE Databricks Workspace path, NOT a local filesystem path.**
 
-When using `upload_folder` or `upload_file`, use this as the target workspace path.
-When creating pipelines, use this folder as the root_path for pipeline files.
+- **Workspace Folder (Databricks):** `{workspace_folder}`
+
+Use this path ONLY for:
+- `upload_folder` / `upload_file` tools (uploading TO Databricks Workspace)
+- Creating pipelines (as the root_path parameter)
+
+**DO NOT use this path for:**
+- Local file operations (Read, Write, Edit, Bash)
+- `run_python_file_on_databricks` (always use local project paths like `scripts/generate_data.py`)
+- Any file tool that operates on the local filesystem
+
+**Your local working directory is the project folder. All local file paths are relative to your current working directory.**
 """
 
   catalog_schema_section = ''

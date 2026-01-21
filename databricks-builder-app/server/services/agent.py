@@ -16,6 +16,7 @@ import logging
 import traceback
 import sys
 import json
+import time
 from pathlib import Path
 from typing import AsyncIterator
 import threading
@@ -96,10 +97,19 @@ def _load_claude_settings() -> dict:
     return _claude_settings
 
 
-def get_databricks_tools():
-  """Get cached Databricks tools, loading if needed."""
+def get_databricks_tools(force_reload: bool = False):
+  """Get Databricks tools, optionally forcing a reload.
+
+  Args:
+      force_reload: If True, recreate the MCP server to clear any corrupted state
+
+  Returns:
+      Tuple of (server, tool_names)
+  """
   global _databricks_server, _databricks_tool_names
-  if _databricks_server is None:
+  if _databricks_server is None or force_reload:
+    if force_reload:
+      logger.info('Force reloading Databricks MCP server')
     _databricks_server, _databricks_tool_names = load_databricks_tools()
   return _databricks_server, _databricks_tool_names
 
@@ -152,7 +162,17 @@ def _run_agent_in_fresh_loop(message, options, result_queue, context, is_cancell
             result_queue.put(('cancelled', None))
             return
           result_queue.put(('message', msg))
+      except asyncio.CancelledError:
+        logger.warning("Agent query was cancelled (asyncio.CancelledError)")
+        result_queue.put(('error', Exception("Agent query cancelled - likely due to stream timeout or connection issue")))
+      except ConnectionError as e:
+        logger.error(f"Connection error in agent query: {e}")
+        result_queue.put(('error', Exception(f"Connection error: {e}. This may occur when tools take longer than the stream timeout (50s).")))
+      except BrokenPipeError as e:
+        logger.error(f"Broken pipe in agent query: {e}")
+        result_queue.put(('error', Exception(f"Broken pipe: {e}. The agent subprocess communication was interrupted.")))
       except Exception as e:
+        logger.exception(f"Unexpected error in agent query: {type(e).__name__}: {e}")
         result_queue.put(('error', e))
       finally:
         result_queue.put(('done', None))
@@ -207,6 +227,10 @@ async def stream_agent_response(
   else:
     logger.info(f'Starting new session in {project_dir}: {message[:100]}...')
 
+  # Log the working directory for debugging path issues
+  logger.info(f'Agent working directory (cwd): {project_dir}')
+  logger.info(f'Workspace folder (remote): {workspace_folder}')
+
   # Set auth context for this request (enables per-user Databricks auth)
   set_databricks_auth(databricks_host, databricks_token)
 
@@ -231,16 +255,24 @@ async def stream_agent_response(
     # Load Claude settings for Databricks model serving authentication
     claude_env = _load_claude_settings()
 
+    # Stderr callback to capture Claude subprocess output for debugging
+    def stderr_callback(line: str):
+      logger.debug(f'[Claude stderr] {line.strip()}')
+      # Also print to stderr for immediate visibility during development
+      import sys
+      print(f'[Claude stderr] {line.strip()}', file=sys.stderr, flush=True)
+
     options = ClaudeAgentOptions(
       cwd=str(project_dir),
       allowed_tools=allowed_tools,
-      permission_mode='acceptEdits',  # Auto-accept file edits
+      permission_mode='bypassPermissions',  # Auto-accept all tools including MCP
       resume=session_id,  # Resume from previous session if provided
       mcp_servers={'databricks': databricks_server},  # In-process SDK tools
       system_prompt=system_prompt,  # Databricks-focused system prompt
       setting_sources=["user", "project"],  # Load Skills from filesystem
       env=claude_env,  # Pass Databricks auth settings (ANTHROPIC_AUTH_TOKEN, etc.)
       include_partial_messages=True,  # Enable token-by-token streaming
+      stderr=stderr_callback,  # Capture stderr for debugging
     )
 
     # Run agent in fresh event loop to avoid subprocess transport issues (#462)
@@ -256,11 +288,34 @@ async def stream_agent_response(
     )
     agent_thread.start()
 
-    # Process messages from the queue
+    # Process messages from the queue with keepalive for long operations
+    KEEPALIVE_INTERVAL = 15  # seconds - send keepalive if no activity
+    last_activity = time.time()
+
     while True:
+      # Use timeout on queue.get to allow keepalive emission
+      def get_with_timeout():
+        try:
+          return result_queue.get(timeout=KEEPALIVE_INTERVAL)
+        except queue.Empty:
+          return ('keepalive', None)
+
       msg_type, msg = await asyncio.get_event_loop().run_in_executor(
-        None, result_queue.get
+        None, get_with_timeout
       )
+
+      if msg_type == 'keepalive':
+        # Emit keepalive event to keep the stream active during long tool execution
+        elapsed = time.time() - last_activity
+        logger.debug(f'Emitting keepalive after {elapsed:.0f}s of inactivity')
+        yield {
+          'type': 'keepalive',
+          'elapsed_since_last_event': elapsed,
+        }
+        continue
+
+      # Update last activity time for non-keepalive messages
+      last_activity = time.time()
 
       if msg_type == 'done':
         break
@@ -293,10 +348,31 @@ async def stream_agent_response(
                 'tool_input': block.input,
               }
             elif isinstance(block, ToolResultBlock):
+              # Extract content - may be string, list, or complex structure
+              content = block.content
+              if isinstance(content, list):
+                # Handle list of content blocks (e.g., [{'type': 'text', 'text': '...'}])
+                texts = []
+                for item in content:
+                  if isinstance(item, dict) and 'text' in item:
+                    texts.append(item['text'])
+                  elif isinstance(item, str):
+                    texts.append(item)
+                  else:
+                    texts.append(str(item))
+                content = '\n'.join(texts) if texts else str(block.content)
+              elif not isinstance(content, str):
+                content = str(content)
+
+              # Improve generic "Stream closed" error messages
+              if block.is_error and 'Stream closed' in content:
+                content = f'Tool execution interrupted: {content}. This may occur when operations exceed timeout limits or when the connection is interrupted. Check backend logs for more details.'
+                logger.warning(f'Tool result error (improved): {content}')
+
               yield {
                 'type': 'tool_result',
                 'tool_use_id': block.tool_use_id,
-                'content': block.content,
+                'content': content,
                 'is_error': block.is_error,
               }
 
@@ -319,14 +395,34 @@ async def stream_agent_response(
 
         elif isinstance(msg, UserMessage):
           # UserMessage can contain tool results (sent back to Claude after tool execution)
-          content = msg.content
-          if isinstance(content, list):
-            for block in content:
+          msg_content = msg.content
+          if isinstance(msg_content, list):
+            for block in msg_content:
               if isinstance(block, ToolResultBlock):
+                # Extract content - may be string, list, or complex structure
+                content = block.content
+                if isinstance(content, list):
+                  texts = []
+                  for item in content:
+                    if isinstance(item, dict) and 'text' in item:
+                      texts.append(item['text'])
+                    elif isinstance(item, str):
+                      texts.append(item)
+                    else:
+                      texts.append(str(item))
+                  content = '\n'.join(texts) if texts else str(block.content)
+                elif not isinstance(content, str):
+                  content = str(content)
+
+                # Improve generic "Stream closed" error messages
+                if block.is_error and 'Stream closed' in content:
+                  content = f'Tool execution interrupted: {content}. This may occur when operations exceed timeout limits or when the connection is interrupted. Check backend logs for more details.'
+                  logger.warning(f'Tool result error (improved): {content}')
+
                 yield {
                   'type': 'tool_result',
                   'tool_use_id': block.tool_use_id,
-                  'content': block.content,
+                  'content': content,
                   'is_error': block.is_error,
                 }
           # Skip string content (just echo of user input)

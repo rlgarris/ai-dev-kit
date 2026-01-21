@@ -182,9 +182,18 @@ class ActiveStreamManager:
                     stream.is_cancelled = True
                     stream.is_complete = True
             except Exception as e:
-                logger.error(f"Stream {stream.execution_id} error: {e}")
+                import traceback
+                error_details = traceback.format_exc()
+                logger.error(f"Stream {stream.execution_id} error: {type(e).__name__}: {e}")
+                logger.error(f"Stream {stream.execution_id} traceback:\n{error_details}")
+                print(f"[STREAM ERROR] {stream.execution_id}: {type(e).__name__}: {e}", flush=True)
+                print(f"[STREAM TRACEBACK]\n{error_details}", flush=True)
                 if not stream.is_complete:
-                    stream.mark_error(str(e))
+                    # Provide more context in error message
+                    error_msg = f"{type(e).__name__}: {str(e)}"
+                    if 'Stream closed' in str(e):
+                        error_msg = f"Agent communication interrupted ({type(e).__name__}): {str(e)}. This may occur when operations take longer than expected."
+                    stream.mark_error(error_msg)
 
         stream.task = asyncio.create_task(run_agent())
         logger.info(f"Started agent task for stream {stream.execution_id}")

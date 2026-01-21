@@ -437,7 +437,22 @@ export default function ProjectPage() {
               },
             ]);
           } else if (type === 'tool_result') {
-            const content = event.content as string;
+            let content = event.content as string;
+
+            // Parse and improve error messages
+            if (event.is_error && typeof content === 'string') {
+              // Extract error from XML-style tags like <tool_use_error>...</tool_use_error>
+              const errorMatch = content.match(/<tool_use_error>(.*?)<\/tool_use_error>/s);
+              if (errorMatch) {
+                content = errorMatch[1].trim();
+              }
+
+              // Improve generic "Stream closed" errors
+              if (content === 'Stream closed' || content.includes('Stream closed')) {
+                content = 'Tool execution interrupted: The operation took too long or the connection was lost. This may happen when operations exceed the 50-second timeout window. Check backend logs for details.';
+              }
+            }
+
             setActivityItems((prev) => [
               ...prev,
               {
@@ -449,7 +464,16 @@ export default function ProjectPage() {
               },
             ]);
           } else if (type === 'error') {
-            toast.error(event.error as string);
+            let errorMsg = event.error as string;
+
+            // Improve generic error messages
+            if (errorMsg === 'Stream closed' || errorMsg.includes('Stream closed')) {
+              errorMsg = 'Execution interrupted: The operation took too long or the connection was lost. Operations exceeding 50 seconds may be interrupted. Check backend logs for details.';
+            }
+
+            toast.error(errorMsg, {
+              duration: 8000,
+            });
           } else if (type === 'cancelled') {
             // Agent was cancelled by user - show a toast notification
             toast.info('Generation stopped');
@@ -457,7 +481,11 @@ export default function ProjectPage() {
         },
         onError: (error) => {
           console.error('Stream error:', error);
-          toast.error('Failed to get response');
+          // Show the actual error message instead of generic text
+          const errorMessage = error.message || 'Failed to get response';
+          toast.error(errorMessage, {
+            duration: 8000, // Show error for 8 seconds
+          });
         },
         onDone: async () => {
           if (fullText) {
@@ -482,7 +510,11 @@ export default function ProjectPage() {
       });
     } catch (error) {
       console.error('Failed to send message:', error);
-      toast.error('Failed to send message');
+      // Show the actual error message instead of generic text
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
+      toast.error(errorMessage, {
+        duration: 8000, // Show error for 8 seconds
+      });
       setIsStreaming(false);
     }
   }, [projectId, input, isStreaming, currentConversation?.id, selectedClusterId, defaultCatalog, defaultSchema, selectedWarehouseId, workspaceFolder]);
