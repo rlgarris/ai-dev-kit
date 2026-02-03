@@ -25,6 +25,7 @@ Use this skill when:
 
 | Tool | Purpose |
 |------|---------|
+| `list_genie` | List all Genie Spaces accessible to you |
 | `create_or_update_genie` | Create or update a Genie Space |
 | `get_genie` | Get Genie Space details |
 | `delete_genie` | Delete a Genie Space |
