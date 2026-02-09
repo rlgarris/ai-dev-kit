@@ -11,9 +11,31 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Resource deleter registry
+# ---------------------------------------------------------------------------
+# Each tool module registers a callable that deletes a resource given its ID.
+# This avoids hard-coding every resource type inside the manifest tool layer.
+_RESOURCE_DELETERS: Dict[str, Callable[[str], None]] = {}
+
+
+def register_deleter(resource_type: str, fn: Callable[[str], None]) -> None:
+    """Register a delete function for a resource type.
+
+    Tool modules call this at import time so the manifest tool layer can
+    delete any tracked resource without knowing implementation details.
+
+    Args:
+        resource_type: The manifest resource type key (e.g. ``"job"``).
+        fn: A callable that takes a ``resource_id`` string and deletes
+            the corresponding Databricks resource.  Should raise on failure.
+    """
+    _RESOURCE_DELETERS[resource_type] = fn
+
 
 MANIFEST_FILENAME = ".databricks-resources.json"
 MANIFEST_VERSION = 1

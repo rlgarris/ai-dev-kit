@@ -7,67 +7,22 @@ resources created across sessions.
 import logging
 from typing import Any, Dict, Optional
 
-from ..manifest import list_resources, remove_resource
+from ..manifest import _RESOURCE_DELETERS, list_resources, remove_resource
 from ..server import mcp
 
 logger = logging.getLogger(__name__)
 
-# Mapping from resource type to the delete function and its ID parameter name
-_DELETE_DISPATCHERS = {
-    "dashboard": ("_trash_dashboard", "dashboard_id"),
-    "job": ("_delete_job", "job_id"),
-    "pipeline": ("_delete_pipeline", "pipeline_id"),
-    "genie_space": ("_delete_genie", "space_id"),
-    "knowledge_assistant": ("_delete_ka", "tile_id"),
-    "multi_agent_supervisor": ("_delete_mas", "tile_id"),
-}
-
 
 def _delete_from_databricks(resource_type: str, resource_id: str) -> Optional[str]:
-    """Delete a resource from Databricks. Returns error string or None on success."""
+    """Delete a resource from Databricks using the registered deleter.
+
+    Returns error string or None on success.
+    """
+    deleter = _RESOURCE_DELETERS.get(resource_type)
+    if not deleter:
+        return f"Unsupported resource type for deletion: {resource_type}"
     try:
-        if resource_type == "dashboard":
-            from databricks_tools_core.aibi_dashboards import trash_dashboard
-
-            trash_dashboard(dashboard_id=resource_id)
-        elif resource_type == "job":
-            from databricks_tools_core.jobs import delete_job
-
-            delete_job(job_id=int(resource_id))
-        elif resource_type == "pipeline":
-            from databricks_tools_core.spark_declarative_pipelines.pipelines import (
-                delete_pipeline,
-            )
-
-            delete_pipeline(pipeline_id=resource_id)
-        elif resource_type == "genie_space":
-            from databricks_tools_core.agent_bricks import AgentBricksManager
-
-            manager = AgentBricksManager()
-            manager.genie_delete(resource_id)
-        elif resource_type == "knowledge_assistant":
-            from databricks_tools_core.agent_bricks import AgentBricksManager
-
-            manager = AgentBricksManager()
-            manager.delete(resource_id)
-        elif resource_type == "multi_agent_supervisor":
-            from databricks_tools_core.agent_bricks import AgentBricksManager
-
-            manager = AgentBricksManager()
-            manager.delete(resource_id)
-        elif resource_type in ("catalog", "schema", "volume"):
-            # UC objects: schemas and catalogs are deleted by qualified name (which is also the ID)
-            from databricks_tools_core.auth import get_workspace_client
-
-            w = get_workspace_client()
-            if resource_type == "catalog":
-                w.catalogs.delete(name=resource_id, force=True)
-            elif resource_type == "schema":
-                w.schemas.delete(full_name_arg=resource_id)
-            elif resource_type == "volume":
-                w.volumes.delete(name=resource_id)
-        else:
-            return f"Unsupported resource type for deletion: {resource_type}"
+        deleter(resource_id)
         return None
     except Exception as exc:
         return str(exc)

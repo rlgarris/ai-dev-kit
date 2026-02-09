@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from databricks_tools_core.agent_bricks import AgentBricksManager
 from databricks_tools_core.auth import get_workspace_client
 
+from ..manifest import register_deleter
 from ..server import mcp
 
 # Singleton manager instance for space management operations
@@ -18,6 +19,13 @@ def _get_manager() -> AgentBricksManager:
     if _manager is None:
         _manager = AgentBricksManager()
     return _manager
+
+
+def _delete_genie_resource(resource_id: str) -> None:
+    _get_manager().genie_delete(resource_id)
+
+
+register_deleter("genie_space", _delete_genie_resource)
 
 
 # ============================================================================

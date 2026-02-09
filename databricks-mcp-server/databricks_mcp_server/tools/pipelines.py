@@ -16,7 +16,15 @@ from databricks_tools_core.spark_declarative_pipelines.pipelines import (
     find_pipeline_by_name as _find_pipeline_by_name,
 )
 
+from ..manifest import register_deleter
 from ..server import mcp
+
+
+def _delete_pipeline_resource(resource_id: str) -> None:
+    _delete_pipeline(pipeline_id=resource_id)
+
+
+register_deleter("pipeline", _delete_pipeline_resource)
 
 
 @mcp.tool

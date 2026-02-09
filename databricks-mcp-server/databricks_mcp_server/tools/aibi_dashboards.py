@@ -18,7 +18,15 @@ from databricks_tools_core.aibi_dashboards import (
     unpublish_dashboard as _unpublish_dashboard,
 )
 
+from ..manifest import register_deleter
 from ..server import mcp
+
+
+def _delete_dashboard_resource(resource_id: str) -> None:
+    _trash_dashboard(dashboard_id=resource_id)
+
+
+register_deleter("dashboard", _delete_dashboard_resource)
 
 
 # ============================================================================

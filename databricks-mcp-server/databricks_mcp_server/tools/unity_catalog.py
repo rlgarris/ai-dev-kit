@@ -94,9 +94,27 @@ from databricks_tools_core.unity_catalog import (
     list_provider_shares as _list_provider_shares,
 )
 
+from ..manifest import register_deleter
 from ..server import mcp
 
 logger = logging.getLogger(__name__)
+
+
+def _delete_catalog_resource(resource_id: str) -> None:
+    _delete_catalog(catalog_name=resource_id, force=True)
+
+
+def _delete_schema_resource(resource_id: str) -> None:
+    _delete_schema(full_schema_name=resource_id)
+
+
+def _delete_volume_resource(resource_id: str) -> None:
+    _delete_volume(full_volume_name=resource_id)
+
+
+register_deleter("catalog", _delete_catalog_resource)
+register_deleter("schema", _delete_schema_resource)
+register_deleter("volume", _delete_volume_resource)
 
 
 def _auto_tag(object_type: str, full_name: str) -> None:

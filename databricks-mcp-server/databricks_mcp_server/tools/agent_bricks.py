@@ -11,6 +11,7 @@ from databricks_tools_core.agent_bricks import (
     get_tile_example_queue,
 )
 
+from ..manifest import register_deleter
 from ..server import mcp
 
 # Singleton manager instance
@@ -23,6 +24,18 @@ def _get_manager() -> AgentBricksManager:
     if _manager is None:
         _manager = AgentBricksManager()
     return _manager
+
+
+def _delete_ka_resource(resource_id: str) -> None:
+    _get_manager().delete(resource_id)
+
+
+def _delete_mas_resource(resource_id: str) -> None:
+    _get_manager().delete(resource_id)
+
+
+register_deleter("knowledge_assistant", _delete_ka_resource)
+register_deleter("multi_agent_supervisor", _delete_mas_resource)
 
 
 # ============================================================================

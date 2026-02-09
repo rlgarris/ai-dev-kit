@@ -18,7 +18,15 @@ from databricks_tools_core.jobs import (
     wait_for_run as _wait_for_run,
 )
 
+from ..manifest import register_deleter
 from ..server import mcp
+
+
+def _delete_job_resource(resource_id: str) -> None:
+    _delete_job(job_id=int(resource_id))
+
+
+register_deleter("job", _delete_job_resource)
 
 
 @mcp.tool
