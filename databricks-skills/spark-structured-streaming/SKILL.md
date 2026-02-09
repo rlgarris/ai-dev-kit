@@ -45,15 +45,8 @@ df.writeStream \
 | Topic | Description | Reference |
 |-------|-------------|-----------|
 | **Checkpoints** | Checkpoint management and best practices | See [checkpoint-best-practices.md](checkpoint-best-practices.md) |
-| **Watermarks** | Late data handling, watermark configuration | See [watermark-configuration.md](watermark-configuration.md) |
-| **State Store** | State management, RocksDB configuration | See [state-store-management.md](state-store-management.md) |
-| **Triggers** | Processing time, available now, real-time mode | See [trigger-tuning.md](trigger-tuning.md) |
-
-## Performance
-
-| Topic | Description | Reference |
-|-------|-------------|-----------|
-| **Cost Tuning** | Scheduled streaming, cluster sizing | See [cost-tuning.md](cost-tuning.md) |
+| **Stateful Operations** | Watermarks, state stores, RocksDB configuration | See [stateful-operations.md](stateful-operations.md) |
+| **Trigger & Cost** | Trigger selection, cost optimization, RTM | See [trigger-and-cost-optimization.md](trigger-and-cost-optimization.md) |
 
 ## Best Practices
 
