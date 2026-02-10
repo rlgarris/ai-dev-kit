@@ -37,9 +37,7 @@ async def test_normal_call_passes_through(middleware):
 @pytest.mark.asyncio
 async def test_timeout_returns_structured_result(middleware):
     """TimeoutError is caught and converted to a structured JSON result."""
-    call_next = AsyncMock(
-        side_effect=TimeoutError("Run did not complete within 3600 seconds")
-    )
+    call_next = AsyncMock(side_effect=TimeoutError("Run did not complete within 3600 seconds"))
     ctx = _make_context(
         tool_name="wait_for_run",
         arguments={"run_id": 42, "timeout": 3600},
