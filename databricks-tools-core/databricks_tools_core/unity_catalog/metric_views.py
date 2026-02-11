@@ -215,7 +215,6 @@ def alter_metric_view(
 ) -> Dict[str, Any]:
     """
     Alter an existing metric view with a new YAML definition.
-
     Args:
         full_name: Three-level name (catalog.schema.metric_view_name).
         source: Source table, view, or SQL query.
