@@ -103,7 +103,9 @@ fi
 mkdir -p "${CODEX_SKILLS_DIR}"
 
 if [[ "${INSTALL_ALL}" == "true" ]]; then
-  mapfile -t SELECTED_SKILLS < <(list_skills)
+  while IFS= read -r skill; do
+    SELECTED_SKILLS+=("$skill")
+  done < <(list_skills)
 fi
 
 if [[ ${#SELECTED_SKILLS[@]} -eq 0 ]]; then
