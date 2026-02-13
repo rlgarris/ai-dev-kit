@@ -38,6 +38,19 @@ pip install databricks-codex[dev]
 
 ## Quick Start
 
+### Install Skills + MCP (Codex Session)
+
+```bash
+# From ai-dev-kit repo root
+bash databricks-codex/scripts/install_codex_skills_and_mcp.sh
+# or override profile explicitly
+bash databricks-codex/scripts/install_codex_skills_and_mcp.sh --profile ai-specialist
+```
+
+This installs Databricks skills into `~/.codex/skills` and writes a project MCP entry to `.codex/config.toml` for `databricks-mcp-server`.
+By default it uses the first profile from `databricks auth profiles`.
+Restart Codex after running it.
+
 ### Configuration
 
 ```python
